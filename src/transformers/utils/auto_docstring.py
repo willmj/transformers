@@ -61,6 +61,7 @@ UNROLL_KWARGS_CLASSES = {
 
 HARDCODED_CONFIG_FOR_MODELS = {
     "openai": "OpenAIGPTConfig",
+    "cofrnets": "CoFrNetsConfig",
     "x-clip": "XCLIPConfig",
     "kosmos2": "Kosmos2Config",
     "kosmos2-5": "Kosmos2_5Config",
