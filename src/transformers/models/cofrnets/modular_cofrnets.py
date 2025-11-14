@@ -152,11 +152,19 @@ class CoFrNetsAttention(nn.Module):
         if self.value_proj.bias is not None:
             self.value_proj.bias.data.zero_()
 
-    def forward(self, hidden_states):
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        output_attentions: bool = False,
+        **kwargs,
+    ):
         cofr_scores = self.cofrnet(hidden_states, self.input_dim)
         upper_mask = torch.triu(torch.ones(self.out_grid, self.out_grid), diagonal=1).bool().to(cofr_scores.device)
         upper_mask = upper_mask.unsqueeze(0)
-        cofr_scores = a.masked_fill(upper_mask[:,:cofr_scores.size(dim=1),:], float('-inf'))
+        cofr_scores = cofr_scores.masked_fill(upper_mask[:,:cofr_scores.size(dim=1),:], float('-inf'))
         cofr_scores = F.softmax(cofr_scores, dim=-1)
         value_states = self.value_proj(hidden_states)
         attn_output = torch.bmm(cofr_scores[:, :cofr_scores.size(dim=1), :cofr_scores.size(dim=1)], value_states)
