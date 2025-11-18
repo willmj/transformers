@@ -130,52 +130,11 @@ class CoFrNetsMLP(nn.Module):
         mlp_output = self.cofrnet(self.w1(hidden_states) * self.act(self.wg(hidden_states)), self.input_dim)
         return mlp_output
 
-class CoFrNetsAttention(nn.Module):
-    def __init__(self, config: CoFrNetsConfig, layer_idx: Optional[int] = None):
-        super().__init__()
-        hidden = config.hidden_size
-        self.hidden_size = hidden
-        self.out_grid = int(config.cofrnet_dim)
-
-        self.input_dim = hidden
-        self.cofrnet = CoFrNetContinuant(
-            input_dim=hidden,
-            output_dim=self.out_grid,
-            width=config.cofr_attention_width,
-            depth=config.cofr_attention_depth,
-            epsilon=config.cofr_attention_epsilon,
-            variant=config.cofr_attention_variant,
-        )
-        self.value_proj = nn.Linear(hidden, hidden, bias=True)
-
-        nn.init.trunc_normal_(self.value_proj.weight, mean=0.0, std=0.02)
-        if self.value_proj.bias is not None:
-            self.value_proj.bias.data.zero_()
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-        output_attentions: bool = False,
-        **kwargs,
-    ):
-        cofr_scores = self.cofrnet(hidden_states, self.input_dim)
-        upper_mask = torch.triu(torch.ones(self.out_grid, self.out_grid), diagonal=1).bool().to(cofr_scores.device)
-        upper_mask = upper_mask.unsqueeze(0)
-        cofr_scores = cofr_scores.masked_fill(upper_mask[:,:cofr_scores.size(dim=1),:], float('-inf'))
-        cofr_scores = F.softmax(cofr_scores, dim=-1)
-        value_states = self.value_proj(hidden_states)
-        attn_output = torch.bmm(cofr_scores[:, :cofr_scores.size(dim=1), :cofr_scores.size(dim=1)], value_states)
-        return attn_output, None
-
 
 class CoFrNetsDecoderLayer(LlamaDecoderLayer):
     def __init__(self, config: CoFrNetsConfig, layer_idx: int):
         super().__init__(config, layer_idx)
         self.mlp = CoFrNetsMLP(config)
-        self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
 
 
 class CoFrNetsModel(LlamaModel):
