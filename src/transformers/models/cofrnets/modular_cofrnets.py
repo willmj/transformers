@@ -99,37 +99,6 @@ class CoFrNetsConfig(LlamaConfig):
         )
 
 
-class CoFrNetsMLP(nn.Module):
-    def __init__(self, config: CoFrNetsConfig):
-        super().__init__()
-        hidden = config.hidden_size
-        intermediate = config.intermediate_size
-        use_bias = bool(getattr(config, "mlp_bias", False))
-
-        self.w1 = nn.Linear(hidden, hidden, bias=use_bias)
-        self.wg = nn.Linear(hidden, hidden, bias=use_bias)
-
-        self.act = nn.SiLU()
-
-        self.input_dim = hidden
-        self.cofrnet = CoFrNetContinuant(
-            input_dim=hidden,
-            output_dim=hidden,
-            width=getattr(config, "cofr_mlp_width", 1),
-            depth=getattr(config, "cofr_mlp_depth", 1),
-            epsilon=getattr(config, "cofr_mlp_epsilon", 0.1),
-            variant=getattr(config, "cofr_mlp_variant", None),
-        )
-
-        for layer in [self.w1, self.wg]:
-            nn.init.trunc_normal_(layer.weight, mean=0.0, std=0.02)
-            if layer.bias is not None:
-                layer.bias.data.zero_()
-
-    def forward(self, hidden_states):
-        mlp_output = self.cofrnet(self.w1(hidden_states) * self.act(self.wg(hidden_states)), self.input_dim)
-        return mlp_output
-
 class CoFrNetsAttention(nn.Module):
     def __init__(self, config: CoFrNetsConfig, layer_idx: Optional[int] = None):
         super().__init__()
@@ -174,7 +143,6 @@ class CoFrNetsAttention(nn.Module):
 class CoFrNetsDecoderLayer(LlamaDecoderLayer):
     def __init__(self, config: CoFrNetsConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.mlp = CoFrNetsMLP(config)
         self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
 
 

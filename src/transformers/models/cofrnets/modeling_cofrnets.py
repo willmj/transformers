@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from ...activations import ACT2FN
 from ...cache_utils import Cache, DynamicCache
 from ...generation import GenerationMixin
 from ...integrations import use_kernel_forward_from_hub
@@ -24,38 +25,6 @@ from ...utils import TransformersKwargs, auto_docstring, can_return_tuple
 from ...utils.generic import check_model_inputs
 from .cofrnet_modules.CoFrNet_continuants import CoFrNetContinuant
 from .configuration_cofrnets import CoFrNetsConfig
-
-
-class CoFrNetsMLP(nn.Module):
-    def __init__(self, config: CoFrNetsConfig):
-        super().__init__()
-        hidden = config.hidden_size
-        intermediate = config.intermediate_size
-        use_bias = bool(getattr(config, "mlp_bias", False))
-
-        self.w1 = nn.Linear(hidden, hidden, bias=use_bias)
-        self.wg = nn.Linear(hidden, hidden, bias=use_bias)
-
-        self.act = nn.SiLU()
-
-        self.input_dim = hidden
-        self.cofrnet = CoFrNetContinuant(
-            input_dim=hidden,
-            output_dim=hidden,
-            width=getattr(config, "cofr_mlp_width", 1),
-            depth=getattr(config, "cofr_mlp_depth", 1),
-            epsilon=getattr(config, "cofr_mlp_epsilon", 0.1),
-            variant=getattr(config, "cofr_mlp_variant", None),
-        )
-
-        for layer in [self.w1, self.wg]:
-            nn.init.trunc_normal_(layer.weight, mean=0.0, std=0.02)
-            if layer.bias is not None:
-                layer.bias.data.zero_()
-
-    def forward(self, hidden_states):
-        mlp_output = self.cofrnet(self.w1(hidden_states) * self.act(self.wg(hidden_states)), self.input_dim)
-        return mlp_output
 
 
 class CoFrNetsAttention(nn.Module):
@@ -120,11 +89,28 @@ class CoFrNetsRMSNorm(nn.Module):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
+class CoFrNetsMLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size
+        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
+        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=config.mlp_bias)
+        self.act_fn = ACT2FN[config.hidden_act]
+
+    def forward(self, x):
+        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        return down_proj
+
+
 class CoFrNetsDecoderLayer(GradientCheckpointingLayer):
     def __init__(self, config: CoFrNetsConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
+
         self.mlp = CoFrNetsMLP(config)
         self.input_layernorm = CoFrNetsRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = CoFrNetsRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
