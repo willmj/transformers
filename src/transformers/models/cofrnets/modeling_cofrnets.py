@@ -23,6 +23,7 @@ from ...modeling_utils import PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, can_return_tuple
 from ...utils.generic import check_model_inputs
+from ..llama.modeling_llama import LlamaAttention
 from .cofrnet_modules.CoFrNet_continuants import CoFrNetContinuant
 from .configuration_cofrnets import CoFrNetsConfig
 
@@ -109,11 +110,19 @@ class CoFrNetsDecoderLayer(GradientCheckpointingLayer):
     def __init__(self, config: CoFrNetsConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
+
         self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
 
         self.mlp = CoFrNetsMLP(config)
         self.input_layernorm = CoFrNetsRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = CoFrNetsRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.layer_idx = layer_idx
+
+        # Alternate attention: odd layers = CoFrNet, even layers = standard LLaMA
+        if config.use_cofr_attention and (layer_idx % 2 == 1):
+            self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
+        else:
+            self.self_attn = LlamaAttention(config=config, layer_idx=layer_idx)
 
     def forward(
         self,

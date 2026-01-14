@@ -133,7 +133,7 @@ class CoFrNetsAttention(nn.Module):
         cofr_scores = self.cofrnet(hidden_states, self.input_dim)
         upper_mask = torch.triu(torch.ones(self.out_grid, self.out_grid), diagonal=1).bool().to(cofr_scores.device)
         upper_mask = upper_mask.unsqueeze(0)
-        cofr_scores = cofr_scores.masked_fill(upper_mask[:,:cofr_scores.size(dim=1),:], float('-inf'))
+        cofr_scores = cofr_scores.masked_fill(upper_mask[:, :cofr_scores.size(dim=1), :], float('-inf'))
         cofr_scores = F.softmax(cofr_scores, dim=-1)
         value_states = self.value_proj(hidden_states)
         attn_output = torch.bmm(cofr_scores[:, :cofr_scores.size(dim=1), :cofr_scores.size(dim=1)], value_states)
@@ -143,7 +143,13 @@ class CoFrNetsAttention(nn.Module):
 class CoFrNetsDecoderLayer(LlamaDecoderLayer):
     def __init__(self, config: CoFrNetsConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
+        self.layer_idx = layer_idx
+
+        # Alternate attention: odd layers = CoFrNet, even layers = standard LLaMA
+        if config.use_cofr_attention and (layer_idx % 2 == 1):
+            self.self_attn = CoFrNetsAttention(config=config, layer_idx=layer_idx)
+        else:
+            self.self_attn = LlamaAttention(config=config, layer_idx=layer_idx)
 
 
 class CoFrNetsModel(LlamaModel):
